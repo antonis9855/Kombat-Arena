@@ -1,12 +1,24 @@
 
 #include "sgg/graphics.h"
 #include <stdio.h>
+#include <string>
+#include "util.h"
+
+
+struct GameState
+{
+	std::string m_asset_path = "assets\\";
+	float m_canvas_width = 800;
+	float m_canvas_height = 600;
+
+	graphics::Brush m_brush_bkrnd;
+};
 
 void draw()
 {
 	graphics::Brush br;
 
-	graphics::setOrientation(45);
+	graphics::setOrientation(90);
 
 	br.texture = "assets\\boy2.png";
 	br.outline_opacity = 0.0f;
@@ -18,7 +30,7 @@ void draw()
 	br.fill_color[2] = 0.0f;
 
 	graphics::resetPose();
-	drawText(300, 440, 70, "Hello World!", br);
+	drawText(300, 440, 70, "Hello World!", br); 
 
 	
 }
@@ -35,6 +47,8 @@ void update(float dt)
 
 }
 
+GameState state;
+
 int main(int argc, char ** argv)
 {
 	graphics::createWindow(800, 600, "Hello World");
@@ -42,7 +56,7 @@ int main(int argc, char ** argv)
 	graphics::setDrawFunction(draw);
 	graphics::setUpdateFunction(update);
 
-	graphics::setCanvasSize(800, 600);
+	graphics::setCanvasSize(state.m_canvas_width, state.m_canvas_height);
 	graphics::setCanvasScaleMode(graphics::CANVAS_SCALE_FIT);
 
 
