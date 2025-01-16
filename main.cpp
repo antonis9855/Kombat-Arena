@@ -1,151 +1,222 @@
-
 #include "sgg/graphics.h"
-#include <string>
 #include <iostream>
+#include <cmath>
+#include <vector>
 
-using namespace std;
-
-// Constants
-const int WINDOW_WIDTH = 1200;
-const int WINDOW_HEIGHT = 600;
-const int PLAYER_WIDTH = 50;
-const int PLAYER_HEIGHT = 100;
-const int PLAYER_SPEED = 200;
-const int ATTACK_DAMAGE = 10;
+static const float WINDOW_WIDTH = 800.0f;
+static const float WINDOW_HEIGHT = 400.0f;
 
 
-class Player {
-public:
-    float x, y; 
-    int health;
-    bool attacking;
-    int playerNum;
+struct Fighter
+{
+    float x;            
+    float y;            
+    float speed;        
+    float health;       
+    bool  isPunching;
+    float punchCooldown;
+    float punchRange;
+    float radius;       
+    std::string name;
+    std::string spritePath;
 
-    Player(float startX, float startY, int num) {
-        x = startX;
-        y = startY;
-        health = 100;
-        attacking = false;
-        playerNum = num;
-    }
-
-    void moveLeft(float ms) {
-        x -= PLAYER_SPEED * ms / 1000.0f;
-        if (x < 0) x = 0;
-    }
-
-    void moveRight(float ms) {
-        x += PLAYER_SPEED * ms / 1000.0f;
-        if (x > WINDOW_WIDTH - PLAYER_WIDTH) x = WINDOW_WIDTH - PLAYER_WIDTH;
-    }
-
-    void attack(Player& opponent) {
-        if (!attacking && abs(x - opponent.x) < PLAYER_WIDTH) {
-            opponent.health -= ATTACK_DAMAGE;
-            if (opponent.health < 0) opponent.health = 0;
-            attacking = true; 
-        }
-    }
-
-    void draw() {
-        graphics::Brush brush;
-        brush.fill_color[0] = (playerNum == 1) ? 1.0f : 0.0f; 
-        brush.fill_color[1] = 0.0f;
-        brush.fill_color[2] = (playerNum == 2) ? 1.0f : 0.0f; 
-        graphics::drawRect(x + PLAYER_WIDTH / 2, y + PLAYER_HEIGHT / 2, PLAYER_WIDTH, PLAYER_HEIGHT, brush);
-    }
-
-    void update(float ms) {
-        if (attacking) {
-            attacking = false;
-        }
-    }
-
-    int getHealth() const {
-        return health;
-    }
+    
+    graphics::scancode_t keyLeft;
+    graphics::scancode_t keyRight;
+    graphics::scancode_t keyPunch;
 };
 
-// Game State
-Player player1(100, WINDOW_HEIGHT - PLAYER_HEIGHT - 50, 1);
-Player player2(WINDOW_WIDTH - 150, WINDOW_HEIGHT - PLAYER_HEIGHT - 50, 2);
 
-void drawHealthBar(float x, float y, int health) {
-    graphics::Brush brush;
-    brush.fill_color[0] = 1.0f - (health / 100.0f);
-    brush.fill_color[1] = health / 100.0f;
-    brush.fill_color[2] = 0.0f;
-    graphics::drawRect(x, y, health * 2, 20, brush);
+struct GameState
+{
+    std::vector<Fighter> fighters;
+    bool running = true;
+};
+
+static GameState* g_game = nullptr;
+
+
+void updateFighter(Fighter& f, float dt)
+{
+    if (f.punchCooldown > 0.0f)
+    {
+        f.punchCooldown -= dt;
+        if (f.punchCooldown < 0.0f)
+            f.punchCooldown = 0.0f;
+    }
+
+    if (graphics::getKeyState(f.keyLeft))
+        f.x -= f.speed * dt;
+    if (graphics::getKeyState(f.keyRight))
+        f.x += f.speed * dt;
+
+ 
+    if (graphics::getKeyState(f.keyPunch) && f.punchCooldown <= 0.f)
+    {
+        f.isPunching = true;
+        f.punchCooldown = 0.5f;
+    }
+    else
+    {
+        f.isPunching = false;
+    }
+
+    if (f.health <= 0.f)
+        f.health = 0.f;
 }
 
-void update(float ms) {
-    // Player 1 controls
-    if (graphics::getKeyState(graphics::SCANCODE_A)) {
-        player1.moveLeft(ms);
+
+void drawFighter(const Fighter& f)
+{
+    graphics::Brush br;
+    br.texture = f.spritePath;
+    br.outline_opacity = 0.f;
+   
+    graphics::drawRect(f.x, f.y, 80, 80, br);
+
+    br.texture = "";
+    br.fill_color[0] = br.fill_color[1] = br.fill_color[2] = 1.0f;
+    graphics::drawText(f.x - 20, f.y - 50, 20, f.name.c_str(), br);
+
+   
+    float barW = 60.f, barH = 6.f;
+    float pct = f.health / 100.f;
+    
+    br.fill_color[0] = br.fill_color[1] = br.fill_color[2] = 0.3f;
+    graphics::drawRect(f.x, f.y - 40, barW, barH, br);
+    
+    br.fill_color[0] = 1.f - pct; 
+    br.fill_color[1] = pct;
+    br.fill_color[2] = 0.f;
+    graphics::drawRect(f.x - (barW * (1.f - pct)) / 2.f, f.y - 40, barW * pct, barH, br);
+}
+
+
+void checkPunch(Fighter& A, Fighter& B)
+{
+    if (A.isPunching && B.health > 0.f)
+    {
+        float dx = A.x - B.x;
+        float dy = A.y - B.y;
+        float dist = std::sqrt(dx * dx + dy * dy);
+        if (dist < (A.punchRange + B.radius))
+        {
+            B.health -= 10.f;
+            std::cout << "[Punch] " << A.name << " hits " << B.name << "!\n";
+        }
     }
-    if (graphics::getKeyState(graphics::SCANCODE_D)) {
-        player1.moveRight(ms);
+}
+
+
+void sgg_update(float ms)
+{
+    float dt = ms * 0.001f;
+    if (!g_game || !g_game->running)
+    {
+        graphics::destroyWindow();
+        return;
     }
-    if (graphics::getKeyState(graphics::SCANCODE_W)) {
-        player1.attack(player2);
+
+   
+    for (auto& f : g_game->fighters)
+        updateFighter(f, dt);
+
+
+    if (g_game->fighters.size() == 2)
+    {
+        checkPunch(g_game->fighters[0], g_game->fighters[1]);
+        checkPunch(g_game->fighters[1], g_game->fighters[0]);
     }
+
+    g_game->fighters.erase(
+        std::remove_if(g_game->fighters.begin(), g_game->fighters.end(),
+            [](const Fighter& f) { return f.health <= 0.f; }),
+        g_game->fighters.end()
+    );
+
+    if (graphics::getKeyState(graphics::SCANCODE_ESCAPE) ||
+        g_game->fighters.empty())
+    {
+        g_game->running = false;
+    }
+}
+
+void sgg_draw()
+{
+    if (!g_game || !g_game->running)
+        return;
 
     
-    if (graphics::getKeyState(graphics::SCANCODE_LEFT)) {
-        player2.moveLeft(ms);
-    }
-    if (graphics::getKeyState(graphics::SCANCODE_RIGHT)) {
-        player2.moveRight(ms);
-    }
-    if (graphics::getKeyState(graphics::SCANCODE_UP)) {
-        player2.attack(player1);
-    }
+    for (auto& f : g_game->fighters)
+        drawFighter(f);
 
-    player1.update(ms);
-    player2.update(ms);
+
+    graphics::Brush br;
+    br.fill_color[0] = br.fill_color[1] = br.fill_color[2] = 1.f;
+    br.outline_opacity = 0.f;
+    graphics::drawText(10, 40, 30, "Kombat Arena - Using scancode_t", br);
 }
 
-void draw() {
-    graphics::Brush brush;
 
-    brush.fill_color[0] = 0.2f;
-    brush.fill_color[1] = 0.2f;
-    brush.fill_color[2] = 0.2f;
-    graphics::drawRect(WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2, WINDOW_WIDTH, WINDOW_HEIGHT, brush);
+int main()
+{
+    
+    graphics::createWindow((unsigned int)WINDOW_WIDTH, (unsigned int)WINDOW_HEIGHT, "Kombat Arena");
+    graphics::setUpdateFunction(sgg_update);
+    graphics::setDrawFunction(sgg_draw);
 
     
-    player1.draw();
-    player2.draw();
-
-    drawHealthBar(100, 50, player1.getHealth());
-    drawHealthBar(900, 50, player2.getHealth());
-
-    if (player1.getHealth() <= 0 || player2.getHealth() <= 0) {
-        string winner = (player1.getHealth() > 0) ? "Player 1 Wins!" : "Player 2 Wins!";
-        brush.fill_color[0] = 1.0f;
-        brush.fill_color[1] = 1.0f;
-        brush.fill_color[2] = 1.0f;
-        graphics::drawText(WINDOW_WIDTH / 2 - 100, WINDOW_HEIGHT / 2, 30, winner, brush);
-    }
-}
-
-int main() {
-    graphics::createWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Kombat Arena");
-
-    graphics::setDrawFunction(draw);
-    graphics::setUpdateFunction(update);
-
     graphics::setCanvasSize(WINDOW_WIDTH, WINDOW_HEIGHT);
     graphics::setCanvasScaleMode(graphics::CANVAS_SCALE_FIT);
 
-    graphics::Brush br;
-    br.fill_color[0] = 0.1f;
-    br.fill_color[1] = 0.1f;
-    br.fill_color[2] = 0.1f;
-    graphics::setWindowBackground(br);
+    
+    graphics::Brush bg;
+    bg.fill_color[0] = 0.1f;
+    bg.fill_color[1] = 0.1f;
+    bg.fill_color[2] = 0.1f;
+    graphics::setWindowBackground(bg);
+
+
+    g_game = new GameState();
+
+    Cooldown = 0.f;
+        f.punchRange = 50.f;
+        f.radius = 30.f;
+        f.spritePath = "assets\\fighter1.png";
+
+        
+        f.keyLeft = graphics::SCANCODE_A;
+        f.keyRight = graphics::SCANCODE_D;
+        f.keyPunch = graphics::SCANCODE_G;
+
+        g_game->fighters.push_back(f);
+    }
+
+
+    {
+        Fighter f;
+        f.name = "Ken";
+        f.x = 600.f;
+        f.y = 200.f;
+        f.speed = 200.f;
+        f.health = 100.f;
+        f.isPunching = false;
+        f.punchCooldown = 0.f;
+        f.punchRange = 50.f;
+        f.radius = 30.f;
+        f.spritePath = "assets\\fighter2.png";
+
+        f.keyLeft = graphics::SCANCODE_LEFT;
+        f.keyRight = graphics::SCANCODE_RIGHT;
+        f.keyPunch = graphics::SCANCODE_RCTRL;
+
+        g_game->fighters.push_back(f);
+    }
 
     graphics::startMessageLoop();
 
+    delete g_game;
+    g_game = nullptr;
     return 0;
 }
 
