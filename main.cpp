@@ -369,7 +369,7 @@ int main()
 {
     graphics::createWindow((unsigned int)WINDOW_WIDTH,
         (unsigned int)WINDOW_HEIGHT,
-        "Menu, Collisions, NoAlpha + Soundtrack");
+        "Kombat Arena");
     graphics::setUpdateFunction(sgg_update);
     graphics::setDrawFunction(sgg_draw);
     graphics::setCanvasSize(WINDOW_WIDTH, WINDOW_HEIGHT);
