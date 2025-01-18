@@ -2,16 +2,11 @@
 #include <string>
 #include <vector>
 #include <iostream>
+#include <cmath>
 
-/***************************************************
- * Window & Canvas
- ***************************************************/
 static const float WINDOW_WIDTH = 800.f;
 static const float WINDOW_HEIGHT = 600.f;
 
-/***************************************************
- * Screen states
- ***************************************************/
 enum class ScreenState
 {
     MENU,
@@ -19,9 +14,6 @@ enum class ScreenState
     EXIT
 };
 
-/***************************************************
- * Single button
- ***************************************************/
 struct Button
 {
     float x = 0.f;
@@ -31,9 +23,6 @@ struct Button
     std::string label;
 };
 
-/***************************************************
- * AnimState
- ***************************************************/
 enum class AnimState
 {
     IDLE,
@@ -41,9 +30,6 @@ enum class AnimState
     KO
 };
 
-/***************************************************
- * Player: x,y, speed, health, jumping, ...
- ***************************************************/
 struct Player
 {
     float x = 0.f;
@@ -53,51 +39,33 @@ struct Player
     bool  jumping = false;
     float vy = 0.f;
     float punchCooldown = 0.f;
-
     AnimState anim = AnimState::IDLE;
-
-    // 3 PNGs
     std::string spriteIdle;
     std::string spritePunch;
     std::string spriteKO;
 };
 
-/***************************************************
- * GameState
- ***************************************************/
 struct GameState
 {
     ScreenState currentScreen = ScreenState::MENU;
     bool running = true;
-
-    // backgrounds
     std::string menuBackgroundPath = "assets\\background.png";
     std::string arenaBackgroundPath = "assets\\arena_bg.png";
-
     std::vector<Button> menuButtons;
-
-    // two players
     Player player1;
     Player player2;
 };
 
-// global pointer
 static GameState* g_game = nullptr;
 
-/***************************************************
- * isInsideButton
- ***************************************************/
 bool isInsideButton(const Button& btn, float mx, float my)
 {
     float halfW = btn.width * 0.5f;
     float halfH = btn.height * 0.5f;
-    return !(mx < btn.x - halfW || mx >(btn.x + halfW) ||
-        my < btn.y - halfH || my >(btn.y + halfH));
+    return !(mx < (btn.x - halfW) || mx >(btn.x + halfW) ||
+        my < (btn.y - halfH) || my >(btn.y + halfH));
 }
 
-/***************************************************
- * drawButton
- ***************************************************/
 void drawButton(const Button& btn)
 {
     graphics::Brush br;
@@ -107,10 +75,10 @@ void drawButton(const Button& btn)
     br.fill_color[1] = 0.2f;
     br.fill_color[2] = 0.2f;
     graphics::drawRect(btn.x, btn.y, btn.width, btn.height, br);
-
     if (btn.label == "Play")
+    {
         graphics::setFont("assets\\start_font.ttf");
-
+    }
     br.outline_opacity = 0.f;
     br.fill_color[0] = 1.f;
     br.fill_color[1] = 1.f;
@@ -118,9 +86,6 @@ void drawButton(const Button& btn)
     graphics::drawText(btn.x - 40.f, btn.y + 8.f, 24.f, btn.label.c_str(), br);
 }
 
-/***************************************************
- * drawMenu
- ***************************************************/
 void drawMenu()
 {
     if (!g_game->menuBackgroundPath.empty())
@@ -130,23 +95,17 @@ void drawMenu()
         br.outline_opacity = 0.f;
         graphics::drawRect(400.f, 300.f, 800.f, 600.f, br);
     }
-
     graphics::Brush br;
     br.outline_opacity = 0.f;
     br.fill_color[0] = 1.f;
     br.fill_color[1] = 1.f;
     br.fill_color[2] = 1.f;
     graphics::drawText(280, 100, 40, "MY MENU", br);
-
     for (auto& b : g_game->menuButtons)
         drawButton(b);
-
-    graphics::drawText(220, 550, 20, "Use mouse to click, or ESC to quit.", br);
+    graphics::drawText(220, 550, 20, "Use mouse to click the button, or ESC to quit.", br);
 }
 
-/***************************************************
- * pickSprite
- ***************************************************/
 std::string pickSprite(const Player& p)
 {
     if (p.anim == AnimState::KO)       return p.spriteKO;
@@ -154,56 +113,36 @@ std::string pickSprite(const Player& p)
     return p.spriteIdle;
 }
 
-/***************************************************
- * drawGame: no alpha_mode
- ***************************************************/
 void drawGame()
 {
-    // 1) arena background
     if (!g_game->arenaBackgroundPath.empty())
     {
         graphics::Brush br;
-        br.texture = g_game->arenaBackgroundPath;
         br.outline_opacity = 0.f;
+        br.texture = g_game->arenaBackgroundPath;
         graphics::drawRect(400.f, 300.f, 800.f, 600.f, br);
     }
-
     float groundY = 380.f;
     float spriteW = 80.f;
     float spriteH = 110.f;
-
-    // Player1
     {
-        std::string sprite = pickSprite(g_game->player1);
-
         graphics::Brush br;
         br.outline_opacity = 0.f;
-      
-        br.texture = sprite;
-
+        br.texture = pickSprite(g_game->player1);
         float px = g_game->player1.x;
         float py = groundY - g_game->player1.y;
         graphics::drawRect(px, py, spriteW, spriteH, br);
     }
-
-    // Player2
     {
-        std::string sprite = pickSprite(g_game->player2);
-
         graphics::Brush br;
         br.outline_opacity = 0.f;
-        br.texture = sprite;
-
+        br.texture = pickSprite(g_game->player2);
         float px = g_game->player2.x;
         float py = groundY - g_game->player2.y;
         graphics::drawRect(px, py, spriteW, spriteH, br);
     }
-
-    // health bars top corners
     graphics::Brush br;
     br.outline_opacity = 0.f;
-
-    // p1
     float p1pct = g_game->player1.health / 100.f;
     float barW1 = 200.f, barH = 20.f;
     float barX1 = barW1 * 0.5f + 10.f;
@@ -214,9 +153,7 @@ void drawGame()
     br.fill_color[1] = p1pct;
     br.fill_color[2] = 0.f;
     float fillW1 = barW1 * p1pct;
-    graphics::drawRect(barX1 - (barW1 - fillW1) / 2.f, barY, fillW1, barH, br);
-
-    // p2
+    graphics::drawRect(barX1 - (barW1 - fillW1) * 0.5f, barY, fillW1, barH, br);
     float p2pct = g_game->player2.health / 100.f;
     float barW2 = 200.f;
     float barX2 = WINDOW_WIDTH - barW2 * 0.5f - 10.f;
@@ -226,22 +163,16 @@ void drawGame()
     br.fill_color[1] = p2pct;
     br.fill_color[2] = 0.f;
     float fillW2 = barW2 * p2pct;
-    graphics::drawRect(barX2 - (barW2 - fillW2) / 2.f, barY, fillW2, barH, br);
-
+    graphics::drawRect(barX2 - (barW2 - fillW2) * 0.5f, barY, fillW2, barH, br);
     br.fill_color[0] = br.fill_color[1] = br.fill_color[2] = 1.f;
     if (g_game->player1.health <= 0.f)
         graphics::drawText(300.f, 200.f, 40.f, "Player 2 Wins!", br);
     if (g_game->player2.health <= 0.f)
         graphics::drawText(300.f, 200.f, 40.f, "Player 1 Wins!", br);
-
-    // instructions
     graphics::drawText(10.f, 590.f, 15.f,
         "P1: A/D=move, W=jump, G=punch | P2: Left/Right=move, Up=jump, RCTRL=punch", br);
 }
 
-/***************************************************
- * updatePlayer
- ***************************************************/
 void updatePlayer(Player& p, float dt,
     graphics::scancode_t leftKey,
     graphics::scancode_t rightKey,
@@ -249,15 +180,12 @@ void updatePlayer(Player& p, float dt,
     graphics::scancode_t punchKey)
 {
     if (p.anim == AnimState::KO) return;
-
     if (graphics::getKeyState(leftKey))
         p.x -= p.speed * dt;
     if (graphics::getKeyState(rightKey))
         p.x += p.speed * dt;
-
     if (p.x < 50.f)  p.x = 50.f;
     if (p.x > 750.f) p.x = 750.f;
-
     if (!p.jumping && graphics::getKeyState(jumpKey))
     {
         p.jumping = true;
@@ -274,13 +202,11 @@ void updatePlayer(Player& p, float dt,
             p.vy = 0.f;
         }
     }
-
     if (p.punchCooldown > 0.f)
     {
         p.punchCooldown -= dt;
         if (p.punchCooldown < 0.f) p.punchCooldown = 0.f;
     }
-
     if (graphics::getKeyState(punchKey) && p.punchCooldown <= 0.f)
     {
         p.punchCooldown = 0.5f;
@@ -296,9 +222,6 @@ void updatePlayer(Player& p, float dt,
     }
 }
 
-/***************************************************
- * checkPunch => damage=3
- ***************************************************/
 void checkPunch(Player& A, Player& B)
 {
     if (A.anim == AnimState::PUNCHING)
@@ -318,40 +241,59 @@ void checkPunch(Player& A, Player& B)
     }
 }
 
-/***************************************************
- * updateGame
- ***************************************************/
+void resolveOverlap(Player& p1, Player& p2)
+{
+    float r1 = 30.f, r2 = 30.f;
+    float dx = p1.x - p2.x;
+    float dist = (dx < 0.f) ? -dx : dx;
+    float overlap = (r1 + r2) - dist;
+    if (overlap > 0.f)
+    {
+        float half = overlap * 0.5f;
+        if (dx > 0.f)
+        {
+            p1.x += half;
+            p2.x -= half;
+        }
+        else
+        {
+            p1.x -= half;
+            p2.x += half;
+        }
+    }
+    if (p1.x > p2.x)
+    {
+        float mid = (p1.x + p2.x) * 0.5f;
+        p1.x = mid - r1;
+        p2.x = mid + r2;
+    }
+}
+
 void updateGame(float dt)
 {
     auto& p1 = g_game->player1;
     auto& p2 = g_game->player2;
-
     updatePlayer(p1, dt,
         graphics::SCANCODE_A,
         graphics::SCANCODE_D,
         graphics::SCANCODE_W,
         graphics::SCANCODE_G);
-
     updatePlayer(p2, dt,
         graphics::SCANCODE_LEFT,
         graphics::SCANCODE_RIGHT,
         graphics::SCANCODE_UP,
         graphics::SCANCODE_RCTRL);
-
     if (p1.health > 0.f && p2.health > 0.f)
     {
         checkPunch(p1, p2);
         checkPunch(p2, p1);
     }
+    resolveOverlap(p1, p2);
 }
 
-/***************************************************
- * sgg_draw
- ***************************************************/
 void sgg_draw()
 {
     if (!g_game || !g_game->running) return;
-
     switch (g_game->currentScreen)
     {
     case ScreenState::MENU:
@@ -365,9 +307,6 @@ void sgg_draw()
     }
 }
 
-/***************************************************
- * sgg_update
- ***************************************************/
 void sgg_update(float ms)
 {
     float dt = ms * 0.001f;
@@ -376,7 +315,6 @@ void sgg_update(float ms)
         graphics::destroyWindow();
         return;
     }
-
     if (graphics::getKeyState(graphics::SCANCODE_ESCAPE))
     {
         if (g_game->currentScreen == ScreenState::MENU)
@@ -391,7 +329,6 @@ void sgg_update(float ms)
             return;
         }
     }
-
     if (g_game->currentScreen == ScreenState::MENU)
     {
         graphics::MouseState m;
@@ -422,25 +359,21 @@ void sgg_update(float ms)
     {
         updateGame(dt);
     }
-
     if (g_game->currentScreen == ScreenState::EXIT)
     {
         g_game->running = false;
     }
 }
 
-/***************************************************
- * main
- ***************************************************/
 int main()
 {
-    graphics::createWindow(800, 600, "NoAlphaBlend Older SGG Example");
+    graphics::createWindow((unsigned int)WINDOW_WIDTH,
+        (unsigned int)WINDOW_HEIGHT,
+        "Menu, Collisions, NoAlpha + Soundtrack");
     graphics::setUpdateFunction(sgg_update);
     graphics::setDrawFunction(sgg_draw);
-
-    graphics::setCanvasSize(800, 600);
+    graphics::setCanvasSize(WINDOW_WIDTH, WINDOW_HEIGHT);
     graphics::setCanvasScaleMode(graphics::CANVAS_SCALE_FIT);
-
     {
         graphics::Brush bg;
         bg.fill_color[0] = 0.2f;
@@ -448,39 +381,31 @@ int main()
         bg.fill_color[2] = 0.2f;
         graphics::setWindowBackground(bg);
     }
-
     graphics::setFont("assets\\myfont.ttf");
-
     g_game = new GameState();
-
-    // single "Play" button
     {
         Button b;
-        b.x = 400.f; b.y = 250.f;
-        b.width = 200.f; b.height = 50.f;
+        b.x = 400.f;
+        b.y = 250.f;
+        b.width = 200.f;
+        b.height = 50.f;
         b.label = "Play";
         g_game->menuButtons.push_back(b);
     }
-
-    // player1
     g_game->player1.spriteIdle = "assets\\player1_idle.png";
     g_game->player1.spritePunch = "assets\\player1_punch.png";
     g_game->player1.spriteKO = "assets\\player1_ko.png";
-
-    // player2
     g_game->player2.spriteIdle = "assets\\player2_idle.png";
     g_game->player2.spritePunch = "assets\\player2_punch.png";
     g_game->player2.spriteKO = "assets\\player2_ko.png";
-
-    // backgrounds
     g_game->menuBackgroundPath = "assets\\background.png";
     g_game->arenaBackgroundPath = "assets\\arena_bg.png";
-
     g_game->player1.x = 200.f;
     g_game->player2.x = 600.f;
-
+    graphics::playSound("assets\\soundtrack.mp3", 0.5f, true);
     graphics::startMessageLoop();
     delete g_game;
     g_game = nullptr;
     return 0;
 }
+
