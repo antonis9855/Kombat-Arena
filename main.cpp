@@ -1,411 +1,337 @@
 #include "sgg/graphics.h"
-#include <string>
 #include <vector>
-#include <iostream>
-#include <cmath>
+#include <string>
+#include <algorithm>
 
-static const float WINDOW_WIDTH = 800.f;
-static const float WINDOW_HEIGHT = 600.f;
+enum class ScreenState { MENU, GAME, EXIT };
 
-enum class ScreenState
-{
-    MENU,
-    GAME,
-    EXIT
+class GameState; 
+
+
+class GameObject {
+protected:
+    static int next_id;
+    GameState* state;
+    std::string name;
+    int id;
+    bool active;
+
+public:
+    GameObject(GameState* gs, const std::string& n = "")
+        : state(gs), name(n), active(true) {
+        id = ++next_id;
+    }
+    virtual ~GameObject() {}
+    virtual void update(float dt) {}
+    virtual void draw() {}
+    bool isActive() const { return active; }
+    void setActive(bool a) { active = a; }
+    const std::string& getName() const { return name; }
 };
+int GameObject::next_id = 0;
 
-struct Button
-{
-    float x = 0.f;
-    float y = 0.f;
-    float width = 0.f;
-    float height = 0.f;
-    std::string label;
-};
 
-enum class AnimState
-{
-    IDLE,
-    PUNCHING,
-    KO
-};
+enum class AnimState { IDLE, PUNCHING, KO };
 
-struct Player
-{
-    float x = 0.f;
-    float y = 0.f;
-    float speed = 200.f;
+class Fighter : public GameObject {
+private:
+    float x = 0.f, y = 0.f, speed = 200.f;
     float health = 100.f;
-    bool  jumping = false;
-    float vy = 0.f;
-    float punchCooldown = 0.f;
+    bool jumping = false;
+    float vy = 0.f, punchCooldown = 0.f;
     AnimState anim = AnimState::IDLE;
-    std::string spriteIdle;
-    std::string spritePunch;
-    std::string spriteKO;
+    std::string spriteIdle, spritePunch, spriteKO;
+
+public:
+    Fighter(GameState* gs, const std::string& name) : GameObject(gs, name) {}
+
+    
+    void setSprites(const std::string& idle,
+        const std::string& punch,
+        const std::string& ko) {
+        spriteIdle = idle;
+        spritePunch = punch;
+        spriteKO = ko;
+    }
+    void setPosition(float px, float py) { x = px; y = py; }
+    float getHealth() const { return health; }
+    void setHealth(float h) { health = h; }
+
+    
+    virtual void update(float dt) override;
+    virtual void draw() override;
+
+    
+    void checkPunch(Fighter& other);
+    void resolveOverlap(Fighter& other);
 };
 
-struct GameState
-{
+void Fighter::update(float dt) {
+    if (anim == AnimState::KO) return;
+
+    using namespace graphics;
+    bool left = false, right = false, jump = false, punch = false;
+
+    if (name == "Player1") {
+        left = getKeyState(SCANCODE_A);
+        right = getKeyState(SCANCODE_D);
+        jump = getKeyState(SCANCODE_W);
+        punch = getKeyState(SCANCODE_G);
+    }
+    else {
+        left = getKeyState(SCANCODE_LEFT);
+        right = getKeyState(SCANCODE_RIGHT);
+        jump = getKeyState(SCANCODE_UP);
+        punch = getKeyState(SCANCODE_RCTRL);
+    }
+
+    if (left) x -= speed * dt;
+    if (right) x += speed * dt;
+    if (x < 50.f) x = 50.f;
+    if (x > 750.f) x = 750.f;
+
+    if (!jumping && jump) { jumping = true; vy = 300.f; }
+    if (jumping) {
+        y += vy * dt;
+        vy -= 600.f * dt;
+        if (y < 0.f) { y = 0.f; jumping = false; vy = 0.f; }
+    }
+
+    if (punchCooldown > 0.f) {
+        punchCooldown -= dt;
+        if (punchCooldown < 0.f) punchCooldown = 0.f;
+    }
+    if (punch && punchCooldown <= 0.f) {
+        anim = AnimState::PUNCHING;
+        punchCooldown = 0.5f;
+    }
+    else if (anim != AnimState::KO && punchCooldown < 0.45f && !jumping) {
+        anim = AnimState::IDLE;
+    }
+}
+
+void Fighter::draw() {
+    using namespace graphics;
+    std::string sprite = (anim == AnimState::KO) ? spriteKO :
+        (anim == AnimState::PUNCHING) ? spritePunch : spriteIdle;
+    Brush br;
+    br.outline_opacity = 0.f;
+    br.texture = sprite;
+    float groundY = 380.f;
+    drawRect(x, groundY - y, 80.f, 110.f, br);
+}
+
+void Fighter::checkPunch(Fighter& other) {
+    if (anim == AnimState::PUNCHING && punchCooldown > 0.45f) {
+        float dx = x - other.x;
+        if (dx < 0) dx = -dx;
+        if (dx < 60.f && other.health > 0.f) {
+            other.health -= 3.f;
+            if (other.health < 0.f) other.health = 0.f;
+            if (other.health <= 0.f) other.anim = AnimState::KO;
+        }
+    }
+}
+
+void Fighter::resolveOverlap(Fighter& other) {
+    float r = 30.f;
+    float dx = x - other.x;
+    float dist = dx < 0 ? -dx : dx;
+    float overlap = (2 * r) - dist;
+    if (overlap > 0.f) {
+        float half = overlap * 0.5f;
+        if (dx > 0.f) { x += half; other.x -= half; }
+        else { x -= half; other.x += half; }
+    }
+    if (x > other.x) {
+        float mid = (x + other.x) * 0.5f;
+        x = mid - r; other.x = mid + r;
+    }
+}
+
+
+class MenuButton : public GameObject {
+private:
+    float x, y, width, height;
+    std::string label;
+public:
+    MenuButton(GameState* gs, const std::string& lbl, float px, float py, float w, float h)
+        : GameObject(gs, lbl), x(px), y(py), width(w), height(h), label(lbl) {
+    }
+    bool isInside(float mx, float my) {
+        float halfW = width * 0.5f;
+        float halfH = height * 0.5f;
+        return mx >= (x - halfW) && mx <= (x + halfW) &&
+            my >= (y - halfH) && my <= (y + halfH);
+    }
+    virtual void draw() override {
+        using namespace graphics;
+        Brush br;
+        br.outline_opacity = 1.f;
+        br.outline_width = 2.f;
+        br.fill_color[0] = br.fill_color[1] = br.fill_color[2] = 0.2f;
+        drawRect(x, y, width, height, br);
+
+        if (label == "Play") setFont("assets\\start_font.ttf");
+        br.outline_opacity = 0.f;
+        br.fill_color[0] = br.fill_color[1] = br.fill_color[2] = 1.f;
+        drawText(x - 40.f, y + 8.f, 24.f, label.c_str(), br);
+    }
+};
+
+class GameState {
+private:
+    std::vector<GameObject*> objects;
+public:
     ScreenState currentScreen = ScreenState::MENU;
     bool running = true;
     std::string menuBackgroundPath = "assets\\background.png";
     std::string arenaBackgroundPath = "assets\\arena_bg.png";
-    std::vector<Button> menuButtons;
-    Player player1;
-    Player player2;
+
+    void init();
+    void update(float dt);
+    void draw();
+    std::vector<GameObject*>& getObjects() { return objects; }
+    Fighter* getFighter(const std::string& name) {
+        for (auto* obj : objects) {
+            Fighter* f = dynamic_cast<Fighter*>(obj);
+            if (f && f->getName() == name) return f;
+        }
+        return nullptr;
+    }
+    ~GameState() {
+        for (auto* obj : objects) delete obj;
+        objects.clear();
+    }
 };
 
-static GameState* g_game = nullptr;
+void GameState::init() {
+    objects.push_back(new MenuButton(this, "Play", 400.f, 250.f, 200.f, 50.f));
 
-bool isInsideButton(const Button& btn, float mx, float my)
-{
-    float halfW = btn.width * 0.5f;
-    float halfH = btn.height * 0.5f;
-    return !(mx < (btn.x - halfW) || mx >(btn.x + halfW) ||
-        my < (btn.y - halfH) || my >(btn.y + halfH));
+    Fighter* f1 = new Fighter(this, "Player1");
+    f1->setSprites("assets\\player1_idle.png", "assets\\player1_punch.png", "assets\\player1_ko.png");
+    f1->setPosition(200.f, 0.f);
+    objects.push_back(f1);
+
+    Fighter* f2 = new Fighter(this, "Player2");
+    f2->setSprites("assets\\player2_idle.png", "assets\\player2_punch.png", "assets\\player2_ko.png");
+    f2->setPosition(600.f, 0.f);
+    objects.push_back(f2);
 }
 
-void drawButton(const Button& btn)
-{
-    graphics::Brush br;
-    br.outline_opacity = 1.f;
-    br.outline_width = 2.f;
-    br.fill_color[0] = 0.2f;
-    br.fill_color[1] = 0.2f;
-    br.fill_color[2] = 0.2f;
-    graphics::drawRect(btn.x, btn.y, btn.width, btn.height, br);
-    if (btn.label == "Play")
-    {
-        graphics::setFont("assets\\start_font.ttf");
-    }
-    br.outline_opacity = 0.f;
-    br.fill_color[0] = 1.f;
-    br.fill_color[1] = 1.f;
-    br.fill_color[2] = 1.f;
-    graphics::drawText(btn.x - 40.f, btn.y + 8.f, 24.f, btn.label.c_str(), br);
-}
-
-void drawMenu()
-{
-    if (!g_game->menuBackgroundPath.empty())
-    {
-        graphics::Brush br;
-        br.texture = g_game->menuBackgroundPath;
-        br.outline_opacity = 0.f;
-        graphics::drawRect(400.f, 300.f, 800.f, 600.f, br);
-    }
-    graphics::Brush br;
-    br.outline_opacity = 0.f;
-    br.fill_color[0] = 1.f;
-    br.fill_color[1] = 1.f;
-    br.fill_color[2] = 1.f;
-    graphics::drawText(280, 100, 40, "MY MENU", br);
-    for (auto& b : g_game->menuButtons)
-        drawButton(b);
-    graphics::drawText(220, 550, 20, "Use mouse to click the button, or ESC to quit.", br);
-}
-
-std::string pickSprite(const Player& p)
-{
-    if (p.anim == AnimState::KO)       return p.spriteKO;
-    if (p.anim == AnimState::PUNCHING) return p.spritePunch;
-    return p.spriteIdle;
-}
-
-void drawGame()
-{
-    if (!g_game->arenaBackgroundPath.empty())
-    {
-        graphics::Brush br;
-        br.outline_opacity = 0.f;
-        br.texture = g_game->arenaBackgroundPath;
-        graphics::drawRect(400.f, 300.f, 800.f, 600.f, br);
-    }
-    float groundY = 380.f;
-    float spriteW = 80.f;
-    float spriteH = 110.f;
-    {
-        graphics::Brush br;
-        br.outline_opacity = 0.f;
-        br.texture = pickSprite(g_game->player1);
-        float px = g_game->player1.x;
-        float py = groundY - g_game->player1.y;
-        graphics::drawRect(px, py, spriteW, spriteH, br);
-    }
-    {
-        graphics::Brush br;
-        br.outline_opacity = 0.f;
-        br.texture = pickSprite(g_game->player2);
-        float px = g_game->player2.x;
-        float py = groundY - g_game->player2.y;
-        graphics::drawRect(px, py, spriteW, spriteH, br);
-    }
-    graphics::Brush br;
-    br.outline_opacity = 0.f;
-    float p1pct = g_game->player1.health / 100.f;
-    float barW1 = 200.f, barH = 20.f;
-    float barX1 = barW1 * 0.5f + 10.f;
-    float barY = 10.f;
-    br.fill_color[0] = 0.3f; br.fill_color[1] = 0.3f; br.fill_color[2] = 0.3f;
-    graphics::drawRect(barX1, barY, barW1, barH, br);
-    br.fill_color[0] = 1.f - p1pct;
-    br.fill_color[1] = p1pct;
-    br.fill_color[2] = 0.f;
-    float fillW1 = barW1 * p1pct;
-    graphics::drawRect(barX1 - (barW1 - fillW1) * 0.5f, barY, fillW1, barH, br);
-    float p2pct = g_game->player2.health / 100.f;
-    float barW2 = 200.f;
-    float barX2 = WINDOW_WIDTH - barW2 * 0.5f - 10.f;
-    br.fill_color[0] = 0.3f; br.fill_color[1] = 0.3f; br.fill_color[2] = 0.3f;
-    graphics::drawRect(barX2, barY, barW2, barH, br);
-    br.fill_color[0] = 1.f - p2pct;
-    br.fill_color[1] = p2pct;
-    br.fill_color[2] = 0.f;
-    float fillW2 = barW2 * p2pct;
-    graphics::drawRect(barX2 - (barW2 - fillW2) * 0.5f, barY, fillW2, barH, br);
-    br.fill_color[0] = br.fill_color[1] = br.fill_color[2] = 1.f;
-    if (g_game->player1.health <= 0.f)
-        graphics::drawText(300.f, 200.f, 40.f, "Player 2 Wins!", br);
-    if (g_game->player2.health <= 0.f)
-        graphics::drawText(300.f, 200.f, 40.f, "Player 1 Wins!", br);
-    graphics::drawText(10.f, 590.f, 15.f,
-        "P1: A/D=move, W=jump, G=punch | P2: Left/Right=move, Up=jump, RCTRL=punch", br);
-}
-
-void updatePlayer(Player& p, float dt,
-    graphics::scancode_t leftKey,
-    graphics::scancode_t rightKey,
-    graphics::scancode_t jumpKey,
-    graphics::scancode_t punchKey)
-{
-    if (p.anim == AnimState::KO) return;
-    if (graphics::getKeyState(leftKey))
-        p.x -= p.speed * dt;
-    if (graphics::getKeyState(rightKey))
-        p.x += p.speed * dt;
-    if (p.x < 50.f)  p.x = 50.f;
-    if (p.x > 750.f) p.x = 750.f;
-    if (!p.jumping && graphics::getKeyState(jumpKey))
-    {
-        p.jumping = true;
-        p.vy = 300.f;
-    }
-    if (p.jumping)
-    {
-        p.y += p.vy * dt;
-        p.vy -= 600.f * dt;
-        if (p.y < 0.f)
-        {
-            p.y = 0.f;
-            p.jumping = false;
-            p.vy = 0.f;
+void GameState::update(float dt) {
+    for (auto* obj : objects) obj->update(dt);
+    Fighter* p1 = getFighter("Player1");
+    Fighter* p2 = getFighter("Player2");
+    if (p1 && p2) {
+        if (p1->getHealth() > 0.f && p2->getHealth() > 0.f) {
+            p1->checkPunch(*p2);
+            p2->checkPunch(*p1);
         }
+        p1->resolveOverlap(*p2);
     }
-    if (p.punchCooldown > 0.f)
-    {
-        p.punchCooldown -= dt;
-        if (p.punchCooldown < 0.f) p.punchCooldown = 0.f;
+}
+
+void GameState::draw() {
+    using namespace graphics;
+    Brush br;
+    if (currentScreen == ScreenState::MENU) {
+        if (!menuBackgroundPath.empty()) {
+            br.outline_opacity = 0.f;
+            br.texture = menuBackgroundPath;
+            drawRect(400.f, 300.f, 800.f, 600.f, br);
+        }
+        br.fill_color[0] = br.fill_color[1] = br.fill_color[2] = 1.f;
+        drawText(280, 100, 40, "MY MENU", br);
+        for (auto* obj : objects) obj->draw();
+        drawText(220, 550, 20, "Use mouse to click the button, or ESC to quit.", br);
     }
-    if (graphics::getKeyState(punchKey) && p.punchCooldown <= 0.f)
-    {
-        p.punchCooldown = 0.5f;
-        p.anim = AnimState::PUNCHING;
-    }
-    else
-    {
-        if (p.anim != AnimState::KO)
-        {
-            if (p.punchCooldown < 0.45f && !p.jumping)
-                p.anim = AnimState::IDLE;
+    else if (currentScreen == ScreenState::GAME) {
+        if (!arenaBackgroundPath.empty()) {
+            br.outline_opacity = 0.f;
+            br.texture = arenaBackgroundPath;
+            drawRect(400.f, 300.f, 800.f, 600.f, br);
+        }
+        for (auto* obj : objects) {
+            
+            if (dynamic_cast<Fighter*>(obj))
+                obj->draw();
         }
     }
 }
 
-void checkPunch(Player& A, Player& B)
-{
-    if (A.anim == AnimState::PUNCHING)
-    {
-        if (A.punchCooldown > 0.45f)
-        {
-            float dx = A.x - B.x;
-            if (dx < 0.f) dx = -dx;
-            if (dx < 60.f && B.health>0.f)
-            {
-                B.health -= 3.f;
-                if (B.health < 0.f) B.health = 0.f;
-                if (B.health <= 0.f)
-                    B.anim = AnimState::KO;
-            }
-        }
-    }
-}
 
-void resolveOverlap(Player& p1, Player& p2)
-{
-    float r1 = 30.f, r2 = 30.f;
-    float dx = p1.x - p2.x;
-    float dist = (dx < 0.f) ? -dx : dx;
-    float overlap = (r1 + r2) - dist;
-    if (overlap > 0.f)
-    {
-        float half = overlap * 0.5f;
-        if (dx > 0.f)
-        {
-            p1.x += half;
-            p2.x -= half;
-        }
-        else
-        {
-            p1.x -= half;
-            p2.x += half;
-        }
-    }
-    if (p1.x > p2.x)
-    {
-        float mid = (p1.x + p2.x) * 0.5f;
-        p1.x = mid - r1;
-        p2.x = mid + r2;
-    }
-}
+static GameState* g_gameState = nullptr;
 
-void updateGame(float dt)
-{
-    auto& p1 = g_game->player1;
-    auto& p2 = g_game->player2;
-    updatePlayer(p1, dt,
-        graphics::SCANCODE_A,
-        graphics::SCANCODE_D,
-        graphics::SCANCODE_W,
-        graphics::SCANCODE_G);
-    updatePlayer(p2, dt,
-        graphics::SCANCODE_LEFT,
-        graphics::SCANCODE_RIGHT,
-        graphics::SCANCODE_UP,
-        graphics::SCANCODE_RCTRL);
-    if (p1.health > 0.f && p2.health > 0.f)
-    {
-        checkPunch(p1, p2);
-        checkPunch(p2, p1);
-    }
-    resolveOverlap(p1, p2);
-}
-
-void sgg_draw()
-{
-    if (!g_game || !g_game->running) return;
-    switch (g_game->currentScreen)
-    {
-    case ScreenState::MENU:
-        drawMenu();
-        break;
-    case ScreenState::GAME:
-        drawGame();
-        break;
-    case ScreenState::EXIT:
-        break;
-    }
-}
-
-void sgg_update(float ms)
-{
+void sgg_update(float ms) {
     float dt = ms * 0.001f;
-    if (!g_game || !g_game->running)
-    {
-        graphics::destroyWindow();
+    using namespace graphics;
+    if (!g_gameState || !g_gameState->running) {
+        destroyWindow();
         return;
     }
-    if (graphics::getKeyState(graphics::SCANCODE_ESCAPE))
-    {
-        if (g_game->currentScreen == ScreenState::MENU)
-        {
-            g_game->currentScreen = ScreenState::EXIT;
-            g_game->running = false;
+    if (getKeyState(SCANCODE_ESCAPE)) {
+        if (g_gameState->currentScreen == ScreenState::MENU) {
+            g_gameState->currentScreen = ScreenState::EXIT;
+            g_gameState->running = false;
             return;
         }
-        else
-        {
-            g_game->currentScreen = ScreenState::MENU;
+        else {
+            g_gameState->currentScreen = ScreenState::MENU;
             return;
         }
     }
-    if (g_game->currentScreen == ScreenState::MENU)
-    {
-        graphics::MouseState m;
-        graphics::getMouseState(m);
-        if (m.button_left_pressed)
-        {
+    if (g_gameState->currentScreen == ScreenState::MENU) {
+        MouseState m;
+        getMouseState(m);
+        if (m.button_left_pressed) {
             float mx = (float)m.cur_pos_x;
             float my = (float)m.cur_pos_y;
-            for (auto& b : g_game->menuButtons)
-            {
-                if (isInsideButton(b, mx, my))
-                {
-                    if (b.label == "Play")
-                    {
-                        g_game->currentScreen = ScreenState::GAME;
-                        auto& p1 = g_game->player1;
-                        auto& p2 = g_game->player2;
-                        p1.x = 200.f; p1.y = 0.f; p1.health = 100.f;
-                        p1.jumping = false; p1.vy = 0.f; p1.punchCooldown = 0.f; p1.anim = AnimState::IDLE;
-                        p2.x = 600.f; p2.y = 0.f; p2.health = 100.f;
-                        p2.jumping = false; p2.vy = 0.f; p2.punchCooldown = 0.f; p2.anim = AnimState::IDLE;
-                    }
+            for (auto* obj : g_gameState->getObjects()) {
+                MenuButton* mb = dynamic_cast<MenuButton*>(obj);
+                if (mb && mb->isInside(mx, my) && mb->getName() == "Play") {
+                    g_gameState->currentScreen = ScreenState::GAME;
+                    Fighter* p1 = g_gameState->getFighter("Player1");
+                    Fighter* p2 = g_gameState->getFighter("Player2");
+                    if (p1) { p1->setPosition(200.f, 0.f); p1->setHealth(100.f); }
+                    if (p2) { p2->setPosition(600.f, 0.f); p2->setHealth(100.f); }
                 }
             }
         }
     }
-    else if (g_game->currentScreen == ScreenState::GAME)
-    {
-        updateGame(dt);
+    else if (g_gameState->currentScreen == ScreenState::GAME) {
+        g_gameState->update(dt);
     }
-    if (g_game->currentScreen == ScreenState::EXIT)
-    {
-        g_game->running = false;
-    }
+    if (g_gameState->currentScreen == ScreenState::EXIT)
+        g_gameState->running = false;
 }
 
-int main()
-{
-    graphics::createWindow((unsigned int)WINDOW_WIDTH,
-        (unsigned int)WINDOW_HEIGHT,
-        "Kombat Arena");
-    graphics::setUpdateFunction(sgg_update);
-    graphics::setDrawFunction(sgg_draw);
-    graphics::setCanvasSize(WINDOW_WIDTH, WINDOW_HEIGHT);
-    graphics::setCanvasScaleMode(graphics::CANVAS_SCALE_FIT);
-    {
-        graphics::Brush bg;
-        bg.fill_color[0] = 0.2f;
-        bg.fill_color[1] = 0.2f;
-        bg.fill_color[2] = 0.2f;
-        graphics::setWindowBackground(bg);
-    }
-    graphics::setFont("assets\\myfont.ttf");
-    g_game = new GameState();
-    {
-        Button b;
-        b.x = 400.f;
-        b.y = 250.f;
-        b.width = 200.f;
-        b.height = 50.f;
-        b.label = "Play";
-        g_game->menuButtons.push_back(b);
-    }
-    g_game->player1.spriteIdle = "assets\\player1_idle.png";
-    g_game->player1.spritePunch = "assets\\player1_punch.png";
-    g_game->player1.spriteKO = "assets\\player1_ko.png";
-    g_game->player2.spriteIdle = "assets\\player2_idle.png";
-    g_game->player2.spritePunch = "assets\\player2_punch.png";
-    g_game->player2.spriteKO = "assets\\player2_ko.png";
-    g_game->menuBackgroundPath = "assets\\background.png";
-    g_game->arenaBackgroundPath = "assets\\arena_bg.png";
-    g_game->player1.x = 200.f;
-    g_game->player2.x = 600.f;
-    graphics::playSound("assets\\soundtrack.mp3", 0.5f, true);
-    graphics::startMessageLoop();
-    delete g_game;
-    g_game = nullptr;
+void sgg_draw() {
+    if (g_gameState && g_gameState->running)
+        g_gameState->draw();
+}
+
+int main() {
+    using namespace graphics;
+    createWindow(800, 600, "OOP Kombat Arena");
+    setUpdateFunction(sgg_update);
+    setDrawFunction(sgg_draw);
+    setCanvasSize(800, 600);
+    setCanvasScaleMode(CANVAS_SCALE_FIT);
+
+    Brush bg;
+    bg.fill_color[0] = 0.2f;
+    bg.fill_color[1] = 0.2f;
+    bg.fill_color[2] = 0.2f;
+    setWindowBackground(bg);
+
+    setFont("assets\\myfont.ttf");
+    g_gameState = new GameState();
+    g_gameState->init();
+    playSound("assets\\soundtrack.mp3", 0.5f, true);
+    startMessageLoop();
+    delete g_gameState;
+    g_gameState = nullptr;
     return 0;
 }
 
